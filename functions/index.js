@@ -7,9 +7,12 @@ const { getFirestore } = require('firebase-admin/firestore')
 const admin = require('firebase-admin');
 const serviceAccount = require("./webflow-api-server-85ba7-firebase-adminsdk-kd166-cb72cc7625.json");
 
+
+// - SETUP
+
 const app = express();
 const corsOptions = {
-    origin: ["https://marketingtips.webflow.io", "https://www.marketingtips.co.jp"],
+    origin: ["https://www.marketingtips.co.jp", "https://marketingtips.co.jp"],
     credentials: true
 }
 app.use(cors(corsOptions))
@@ -17,134 +20,114 @@ app.use(cors(corsOptions))
 if (admin.apps.length === 0) {
     admin.initializeApp({
         credential: cert(serviceAccount)
+        //credential: admin.credential.cert(serviceAccount)
     })
 }
 
-const db = getFirestore()
-const USER_COLLECTION = "user"
-const WEBFLOW_API_KEY = process.env.WEBFLOW_API_KEY;
-const blogPostsCollectionID = "6405e65a133ebf3b075a9f4e"
-const baseUrl = "https://api.webflow.com";
+// - PROPERTY
+
+const db = getFirestore();
+const userCollection = process.env.USER_DOCUMENT_ID;
+const webflowApiKey = process.env.WEBFLOW_API_KEY;
+const blogpostsCollectionId = process.env.BLOGPOSTS_COLLECTION_ID;
+const baseUrl = process.env.BASE_URL;
 
 
-// - Firestore
+// - FIRESTORE
 
-//MenberSpace会員IDでコレクションを作成
-app.get("/create-user/:menber_space_id/", async (req, res) => {
-    const menberSpaceUserID = req.params.menber_space_id;
-    const docRef = db.collection(USER_COLLECTION).doc(menberSpaceUserID);
-    const data = {
-        favoriteArticles: [],
-        alreadyReadArticles: []
+// Add favorite articles associated with your member ID.
+app.post("/save-favorite-blog/:member_id", async (req, res) => {
+    try {
+        const { id, slug, title } = req.body;
+        const memberId = req.params.member_id;
+        const docRef = db.collection(userCollection).doc(memberId);
+        const doc = await docRef.get();
+        const userData = doc.exists ? doc.data() : null;
+        let favorites = [];
+
+        if (userData && userData.favorites) {
+            favorites = userData.favorites;
+        }
+
+        if (!favorites.some((blog) => blog.id === id)) {
+            favorites.push({ id, slug, title });
+        }
+
+        await docRef.set({ favorites: favorites });
+    } catch (error) {
+        console.error("データの保存中にエラーが発生しました:", error);
+        res.status(500).send("エラー: データの保存中にエラーが発生しました。");
     }
-    docRef.set(data).then(() => {
-        res.send('書き込み成功')
-    }).catch((e) => {
-        res.send("書き込み失敗")
-    })
-})
+});
 
+// Retrieve favorite articles linked to member ID.
+app.post("/get-favorite-blog/:member_id", async (req, res) => {
+    try {
+        const memberId = req.params.member_id;
+        const docRef = db.collection(userCollection).doc(memberId);
+        const doc = await docRef.get();
+        const userData = doc.exists ? doc.data() : null;
 
-// 会員IDに紐付けて既読した記事を追加
-app.get("/add-read-articles/:menber_space_id/:read_articles_item_id", async (req, res) => {
-    const menberSpaceUserID = req.params.menber_space_id;
-    const read_article_item_id = req.params.read_article_item_id;
-    const docRef = db.collection(USER_COLLECTION).doc(menberSpaceUserID);
-    docRef.get().then((doc) => {
-        if (doc.exists) {
-            const data = doc.data();
-            const readArticleField = data.alreadyReadArticles || [];
-            readArticleField.push(read_article_item_id);
-            docRef.update({ alreadyReadArticles: readArticleField }).then(() => {
-                res.send('書き込み成功')
-            }).catch((e) => {
-                res.send("書き込み失敗")
-            })
+        if (userData && userData.favorites) {
+            res.send(userData.favorites);
         } else {
-            console.log("ドキュメントが存在しません");
+            res.send([]);
         }
-    }).catch((error) => {
-        console.log("エラー: Firestoreドキュメントの取得に失敗しました。", error);
-    });
-})
+    } catch (error) {
+        console.error("データの取得に失敗しました:", error);
+        res.status(500).send("エラー: データの取得に失敗しました。");
+    }
+});
 
+// Delete favorite articles.
+app.post("/delete-favorite-blog/:member_space_id/:blog_item_id", async (req, res) => {
+    try {
+        const memberSpaceUserID = req.params.member_space_id;
+        const itemId = req.params.blog_item_id;
+        const docRef = db.collection(userCollection).doc(memberSpaceUserID);
+        const doc = await docRef.get();
 
-// 会員IDに紐付けてお気に入り記事を追加
-app.get("/add-favorite-articles/:menber_space_id/:favorite_articles_item_id", async (req, res) => {
-    const menberSpaceUserID = req.params.menber_space_id;
-    const favoriteArticlesID = req.params.favorite_articles_item_id;
-    const docRef = db.collection(USER_COLLECTION).doc(menberSpaceUserID);
-    docRef.get().then((doc) => {
         if (doc.exists) {
-            const data = doc.data();
-            const favoriteArticlesField = data.favoriteArticles || [];
-            favoriteArticlesField.push(favoriteArticlesID);
-            docRef.update({ favoriteArticles: favoriteArticlesField }).then(() => {
-                res.send('success')
-            }).catch((e) => {
-                res.send("erorr")
-            })
-        } else {
-            console.log("ドキュメントが存在しません");
+            const userData = doc.data();
+
+            if (userData && userData.favorites) {
+                const favorites = userData.favorites;
+                const updatedFavorites = favorites.filter(blog => blog.id !== itemId);
+
+                await docRef.update({ favorites: updatedFavorites });
+                res.send("ブログデータの削除に成功しました。");
+                return;
+            }
         }
-    }).catch((error) => {
-        console.log("エラー: Firestoreドキュメントの取得に失敗しました。", error);
-    });
-})
 
-// お気に入りの記事を取得
-app.get("/get-favorite-articles/:menber_space_id", async (req, res) => {
-    const menberSpaceUserID = req.params.menber_space_id;
-    const docRef = db.collection(USER_COLLECTION).doc(menberSpaceUserID);
-    docRef.get().then((doc) => {
-        if (doc.exists) {
-            const data = doc.data();
-            const favoriteArticlesField = data.favoriteArticles || [];
-            res.send(favoriteArticlesField)
-        } else {
-            res.send("ドキュメントが存在しません")
-        }
-    }).catch((error) => {
-        res.send("エラー: Firestoreドキュメントの取得に失敗しました。", error)
-    });
-})
+        res.status(404).send("指定されたユーザーまたは削除したいブログが見つかりません。")
+    } catch (error) {
+        console.error("ブログデータの削除中にエラーが発生しました:", error);
+        res.status(500).send("エラー: ブログデータの削除中にエラーが発生しました。");
+    }
+});
 
-// 既読済みの記事を取得
-app.get("/get-already-read-articles/:menber_space_id", async (req, res) => {
-    const menberSpaceUserID = req.params.menber_space_id;
-    const docRef = db.collection(USER_COLLECTION).doc(menberSpaceUserID);
-    docRef.get().then((doc) => {
-        if (doc.exists) {
-            const data = doc.data();
-            const alreadyReadArticlesField = data.alreadyReadArticles || [];
-            res.send(alreadyReadArticlesField)
-        } else {
-            res.send("ドキュメントが存在しません")
-        }
-    }).catch((error) => {
-        res.send("エラー: Firestoreドキュメントの取得に失敗しました。", error)
-    });
-})
 
-// - Webfow
+// - WEBFLOW
 
-// increment blog-posts total
+
+// Increment blog-posts totalviews
 app.patch('/increment-blog-posts-totalviews/:item_id/:prev_totalviews', async (req, res) => {
-    const item_id = req.params.item_id;
-    const prevTotalviews = req.params.prev_totalviews;
-    const url = baseUrl + `/collections/${blogPostsCollectionID}/items/${item_id}`;
-    const patchOptions = {
-        method: 'PATCH',
-        headers: {
-            'accept': 'application/json',
-            'content-type': 'application/json',
-            'authorization': 'Bearer ' + WEBFLOW_API_KEY,
-        },
-        body: JSON.stringify({
-            fields: { totalviews: Number(prevTotalviews) + 1 }
-        })
-    };
     try {
+        const item_id = req.params.item_id;
+        const prevTotalviews = req.params.prev_totalviews;
+        const url = baseUrl + `/collections/${blogpostsCollectionId}/items/${item_id}`;
+        const patchOptions = {
+            method: 'PATCH',
+            headers: {
+                'accept': 'application/json',
+                'content-type': 'application/json',
+                'authorization': 'Bearer ' + webflowApiKey,
+            },
+            body: JSON.stringify({
+                fields: { totalviews: Number(prevTotalviews) + 1 }
+            })
+        };
         const response = await fetch(url, patchOptions)
         const updatedData = await response.json()
         res.send(updatedData)
@@ -153,26 +136,25 @@ app.patch('/increment-blog-posts-totalviews/:item_id/:prev_totalviews', async (r
     }
 })
 
-
-// increment blog-posts rate-counter
+// Increment blog-posts rate-counter
 app.patch('/increment-blog-posts-rate-counter/:item_id/:prev_total_rate/:prev_rate_counter/:rate', async (req, res) => {
-    const item_id = req.params.item_id;
-    const prevTotalRate = req.params.prev_total_rate;
-    const prevRateCounter = req.params.prev_rate_counter;
-    const rate = req.params.rate;
-    const url = baseUrl + `/collections/${blogPostsCollectionID}/items/${item_id}`;
-    const patchOptions = {
-        method: 'PATCH',
-        headers: {
-            'accept': 'application/json',
-            'content-type': 'application/json',
-            'authorization': 'Bearer ' + WEBFLOW_API_KEY,
-        },
-        body: JSON.stringify({
-            fields: { 'rate-counter': (Number(prevRateCounter) + Number(rate)), 'total-rate': Number(prevTotalRate) + 1 }
-        })
-    };
     try {
+        const itemId = req.params.item_id;
+        const prevTotalRate = req.params.prev_total_rate;
+        const prevRateCounter = req.params.prev_rate_counter;
+        const rate = req.params.rate;
+        const url = baseUrl + `/collections/${blogpostsCollectionId}/items/${itemId}`;
+        const patchOptions = {
+            method: 'PATCH',
+            headers: {
+                'accept': 'application/json',
+                'content-type': 'application/json',
+                'authorization': 'Bearer ' + webflowApiKey,
+            },
+            body: JSON.stringify({
+                fields: { 'rate-counter': (Number(prevRateCounter) + Number(rate)), 'total-rate': Number(prevTotalRate) + 1 }
+            })
+        };
         const response = await fetch(url, patchOptions)
         const updatedData = await response.json()
         res.send(updatedData)
@@ -181,4 +163,55 @@ app.patch('/increment-blog-posts-rate-counter/:item_id/:prev_total_rate/:prev_ra
     }
 })
 
-exports.v1 = functions.https.onRequest(app);
+// Increment blog-posts favorite
+app.patch('/increment-blog-posts-favorite/:item_id/:prev_favorite', async (req, res) => {
+    try {
+        const itemId = req.params.item_id;
+        const prevFavorite = req.params.prev_favorite;
+        const url = baseUrl + `/collections/${blogpostsCollectionId}/items/${itemId}`;
+        const patchOptions = {
+            method: 'PATCH',
+            headers: {
+                'accept': 'application/json',
+                'content-type': 'application/json',
+                'authorization': 'Bearer ' + webflowApiKey,
+            },
+            body: JSON.stringify({
+                fields: { 'favorite-4': (Number(prevFavorite) + 1) }
+            })
+        };
+        const response = await fetch(url, patchOptions)
+        const updatedData = await response.json()
+        res.send(updatedData)
+    } catch (e) {
+        res.send(e)
+    }
+})
+
+// Decrement blog-posts favorite
+app.patch('/decrement-blog-posts-favorite/:item_id/:prev_favorite', async (req, res) => {
+    try {
+        const itemId = req.params.item_id;
+        const prevFavorite = req.params.prev_favorite;
+        const url = baseUrl + `/collections/${blogpostsCollectionId}/items/${itemId}`;
+        const patchOptions = {
+            method: 'PATCH',
+            headers: {
+                'accept': 'application/json',
+                'content-type': 'application/json',
+                'authorization': 'Bearer ' + webflowApiKey,
+            },
+            body: JSON.stringify({
+                fields: { 'favorite-4': (Number(prevFavorite) - 1) }
+            })
+        };
+        const response = await fetch(url, patchOptions)
+        const updatedData = await response.json()
+        res.send(updatedData)
+    } catch (e) {
+        res.send(e)
+    }
+})
+
+const region = 'asia-northeast1';
+exports.webflowApi = functions.region(region).https.onRequest(app);
