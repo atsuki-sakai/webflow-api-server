@@ -8,7 +8,7 @@ const admin = require('firebase-admin');
 const serviceAccount = require("./webflow-api-server-85ba7-firebase-adminsdk-kd166-cb72cc7625.json");
 
 
-// - SETUP
+// -- SETUP
 
 const app = express();
 const corsOptions = {
@@ -20,11 +20,10 @@ app.use(cors(corsOptions))
 if (admin.apps.length === 0) {
     admin.initializeApp({
         credential: cert(serviceAccount)
-        //credential: admin.credential.cert(serviceAccount)
     })
 }
 
-// - PROPERTY
+// -- PROPERTY
 
 const db = getFirestore();
 const userCollection = process.env.USER_DOCUMENT_ID;
@@ -32,8 +31,24 @@ const webflowApiKey = process.env.WEBFLOW_API_KEY;
 const blogpostsCollectionId = process.env.BLOGPOSTS_COLLECTION_ID;
 const baseUrl = process.env.BASE_URL;
 
+const webflowHeaders = {
+    'accept': 'application/json',
+    'content-type': 'application/json',
+    'authorization': 'Bearer ' + webflowApiKey,
+};
 
-// - FIRESTORE
+
+// -- FUNCTIONS
+
+function patchOptions(body) {
+    return {
+        method: 'PATCH',
+        headers: webflowHeaders,
+        body: body
+    }
+};
+
+// ## FIRESTORE
 
 // Add favorite articles associated with your member ID.
 app.post("/save-favorite-blog/:member_id", async (req, res) => {
@@ -108,7 +123,7 @@ app.post("/delete-favorite-blog/:member_space_id/:blog_item_id", async (req, res
 });
 
 
-// - WEBFLOW
+// ## WEBFLOW
 
 
 // Increment blog-posts totalviews
@@ -117,18 +132,11 @@ app.patch('/increment-blog-posts-totalviews/:item_id/:prev_totalviews', async (r
         const item_id = req.params.item_id;
         const prevTotalviews = req.params.prev_totalviews;
         const url = baseUrl + `/collections/${blogpostsCollectionId}/items/${item_id}`;
-        const patchOptions = {
-            method: 'PATCH',
-            headers: {
-                'accept': 'application/json',
-                'content-type': 'application/json',
-                'authorization': 'Bearer ' + webflowApiKey,
-            },
-            body: JSON.stringify({
-                fields: { totalviews: Number(prevTotalviews) + 1 }
-            })
-        };
-        const response = await fetch(url, patchOptions)
+        const body = JSON.stringify({
+            fields: { totalviews: Number(prevTotalviews) + 1 }
+        });
+        const options = patchOptions(body);
+        const response = await fetch(url, options)
         const updatedData = await response.json()
         res.send(updatedData)
     } catch (e) {
@@ -144,18 +152,11 @@ app.patch('/increment-blog-posts-rate-counter/:item_id/:prev_total_rate/:prev_ra
         const prevRateCounter = req.params.prev_rate_counter;
         const rate = req.params.rate;
         const url = baseUrl + `/collections/${blogpostsCollectionId}/items/${itemId}`;
-        const patchOptions = {
-            method: 'PATCH',
-            headers: {
-                'accept': 'application/json',
-                'content-type': 'application/json',
-                'authorization': 'Bearer ' + webflowApiKey,
-            },
-            body: JSON.stringify({
-                fields: { 'rate-counter': (Number(prevRateCounter) + Number(rate)), 'total-rate': Number(prevTotalRate) + 1 }
-            })
-        };
-        const response = await fetch(url, patchOptions)
+        const body = JSON.stringify({
+            fields: { 'rate-counter': (Number(prevRateCounter) + Number(rate)), 'total-rate': Number(prevTotalRate) + 1 }
+        });
+        const options = patchOptions(body)
+        const response = await fetch(url, options)
         const updatedData = await response.json()
         res.send(updatedData)
     } catch (e) {
@@ -169,18 +170,11 @@ app.patch('/increment-blog-posts-favorite/:item_id/:prev_favorite', async (req, 
         const itemId = req.params.item_id;
         const prevFavorite = req.params.prev_favorite;
         const url = baseUrl + `/collections/${blogpostsCollectionId}/items/${itemId}`;
-        const patchOptions = {
-            method: 'PATCH',
-            headers: {
-                'accept': 'application/json',
-                'content-type': 'application/json',
-                'authorization': 'Bearer ' + webflowApiKey,
-            },
-            body: JSON.stringify({
-                fields: { 'favorite-4': (Number(prevFavorite) + 1) }
-            })
-        };
-        const response = await fetch(url, patchOptions)
+        const body = JSON.stringify({
+            fields: { 'favorite-4': (Number(prevFavorite) + 1) }
+        });
+        const options = patchOptions(body);
+        const response = await fetch(url, options)
         const updatedData = await response.json()
         res.send(updatedData)
     } catch (e) {
@@ -194,18 +188,11 @@ app.patch('/decrement-blog-posts-favorite/:item_id/:prev_favorite', async (req, 
         const itemId = req.params.item_id;
         const prevFavorite = req.params.prev_favorite;
         const url = baseUrl + `/collections/${blogpostsCollectionId}/items/${itemId}`;
-        const patchOptions = {
-            method: 'PATCH',
-            headers: {
-                'accept': 'application/json',
-                'content-type': 'application/json',
-                'authorization': 'Bearer ' + webflowApiKey,
-            },
-            body: JSON.stringify({
-                fields: { 'favorite-4': (Number(prevFavorite) - 1) }
-            })
-        };
-        const response = await fetch(url, patchOptions)
+        const body = JSON.stringify({
+            fields: { 'favorite-4': (Number(prevFavorite) - 1) }
+        });
+        const options = patchOptions(body)
+        const response = await fetch(url, options)
         const updatedData = await response.json()
         res.send(updatedData)
     } catch (e) {
